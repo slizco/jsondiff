@@ -27,3 +27,22 @@ Library API documentation can be found on godoc.org: https://godoc.org/github.co
 You can try **LIVE** version here (thanks to [gopherjs](https://github.com/gopherjs/gopherjs)): https://nosmileface.dev/jsondiff
 
 The library is inspired by http://tlrobinson.net/projects/javascript-fun/jsondiff/
+
+## YAML Output Support
+
+This fork is based heavily on the original [jsondiff project](https://github.com/nsf/jsondiff). The main change from the original (apart from a refactor) is that this one supports YAML output!
+
+Example:
+```go
+a := `{"a": 1, "b": {"b_0": 4}, "c": 3}`
+b := `{"b": {"b_0": 2}, "c": 3}`
+
+opts := jsondiff.DefaultConsoleOptions().WithYAMLOutput()
+
+_, diff := jsondiff.Compare([]byte(a), []byte(b), &opts)
+
+fmt.Println(diff)
+```
+will output the following:
+
+![YAMLOutput](images/yaml_output.png)

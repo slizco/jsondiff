@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
-	"sort"
 	"strconv"
 )
 
@@ -43,6 +42,7 @@ type Tag struct {
 }
 
 type Options struct {
+	Output     string
 	Normal     Tag
 	Added      Tag
 	Removed    Tag
@@ -74,12 +74,23 @@ func DefaultHTMLOptions() Options {
 	}
 }
 
+// WithYAMLOutput modifies the given options for writing YAML output
+func (opts Options) WithYAMLOutput() Options {
+	opts.Indent = "  "   // indent by only two spaces in YAML
+	opts.Output = "YAML" // set language to YAML
+	return opts
+}
+
 type context struct {
 	opts    *Options
 	buf     bytes.Buffer
 	level   int
 	lastTag *Tag
 	diff    Difference
+}
+
+func (ctx *context) Y() bool {
+	return ctx.opts.Output == "YAML"
 }
 
 func (ctx *context) newline(s string) {
@@ -98,7 +109,11 @@ func (ctx *context) newline(s string) {
 }
 
 func (ctx *context) key(k string) {
-	ctx.buf.WriteString(strconv.Quote(k))
+	if !ctx.Y() {
+		// only need quotes if JSON
+		k = strconv.Quote(k)
+	}
+	ctx.buf.WriteString(k)
 	ctx.buf.WriteString(": ")
 }
 
@@ -109,49 +124,20 @@ func (ctx *context) writeValue(v interface{}, full bool) {
 	case json.Number:
 		ctx.buf.WriteString(string(vv))
 	case string:
-		ctx.buf.WriteString(strconv.Quote(vv))
+		if !ctx.Y() {
+			// only need quotes if JSON
+			vv = strconv.Quote(vv)
+		}
+		ctx.buf.WriteString(vv)
 	case []interface{}:
 		if full {
-			if len(vv) == 0 {
-				ctx.buf.WriteString("[")
-			} else {
-				ctx.level++
-				ctx.newline("[")
-			}
-			for i, v := range vv {
-				ctx.writeValue(v, true)
-				if i != len(vv)-1 {
-					ctx.newline(",")
-				} else {
-					ctx.level--
-					ctx.newline("")
-				}
-			}
-			ctx.buf.WriteString("]")
+			ctx.writeList(vv)
 		} else {
 			ctx.buf.WriteString("[]")
 		}
 	case map[string]interface{}:
 		if full {
-			if len(vv) == 0 {
-				ctx.buf.WriteString("{")
-			} else {
-				ctx.level++
-				ctx.newline("{")
-			}
-			i := 0
-			for k, v := range vv {
-				ctx.key(k)
-				ctx.writeValue(v, true)
-				if i != len(vv)-1 {
-					ctx.newline(",")
-				} else {
-					ctx.level--
-					ctx.newline("")
-				}
-				i++
-			}
-			ctx.buf.WriteString("}")
+			ctx.writeMap(vv)
 		} else {
 			ctx.buf.WriteString("{}")
 		}
@@ -262,90 +248,10 @@ func (ctx *context) printDiff(a, b interface{}) {
 			}
 		}
 	case reflect.Slice:
-		sa, sb := a.([]interface{}), b.([]interface{})
-		salen, sblen := len(sa), len(sb)
-		max := salen
-		if sblen > max {
-			max = sblen
-		}
-		ctx.tag(&ctx.opts.Normal)
-		if max == 0 {
-			ctx.buf.WriteString("[")
-		} else {
-			ctx.level++
-			ctx.newline("[")
-		}
-		for i := 0; i < max; i++ {
-			if i < salen && i < sblen {
-				ctx.printDiff(sa[i], sb[i])
-			} else if i < salen {
-				ctx.tag(&ctx.opts.Removed)
-				ctx.writeValue(sa[i], true)
-				ctx.result(SupersetMatch)
-			} else if i < sblen {
-				ctx.tag(&ctx.opts.Added)
-				ctx.writeValue(sb[i], true)
-				ctx.result(NoMatch)
-			}
-			ctx.tag(&ctx.opts.Normal)
-			if i != max-1 {
-				ctx.newline(",")
-			} else {
-				ctx.level--
-				ctx.newline("")
-			}
-		}
-		ctx.buf.WriteString("]")
-		ctx.writeTypeMaybe(a)
+		ctx.printSliceDiff(a, b)
 		return
 	case reflect.Map:
-		ma, mb := a.(map[string]interface{}), b.(map[string]interface{})
-		keysMap := make(map[string]bool)
-		for k := range ma {
-			keysMap[k] = true
-		}
-		for k := range mb {
-			keysMap[k] = true
-		}
-		keys := make([]string, 0, len(keysMap))
-		for k := range keysMap {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		ctx.tag(&ctx.opts.Normal)
-		if len(keys) == 0 {
-			ctx.buf.WriteString("{")
-		} else {
-			ctx.level++
-			ctx.newline("{")
-		}
-		for i, k := range keys {
-			va, aok := ma[k]
-			vb, bok := mb[k]
-			if aok && bok {
-				ctx.key(k)
-				ctx.printDiff(va, vb)
-			} else if aok {
-				ctx.tag(&ctx.opts.Removed)
-				ctx.key(k)
-				ctx.writeValue(va, true)
-				ctx.result(SupersetMatch)
-			} else if bok {
-				ctx.tag(&ctx.opts.Added)
-				ctx.key(k)
-				ctx.writeValue(vb, true)
-				ctx.result(NoMatch)
-			}
-			ctx.tag(&ctx.opts.Normal)
-			if i != len(keys)-1 {
-				ctx.newline(",")
-			} else {
-				ctx.level--
-				ctx.newline("")
-			}
-		}
-		ctx.buf.WriteString("}")
-		ctx.writeTypeMaybe(a)
+		ctx.printMapDiff(a, b)
 		return
 	}
 	ctx.tag(&ctx.opts.Normal)
