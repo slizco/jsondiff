@@ -26,12 +26,26 @@ var cases = []struct {
 }
 
 func TestCompare(t *testing.T) {
-	opts := DefaultConsoleOptions()
-	opts.PrintTypes = false
-	for i, c := range cases {
-		result, _ := Compare([]byte(c.a), []byte(c.b), &opts)
-		if result != c.result {
-			t.Errorf("case %d failed, got: %s, expected: %s", i, result, c.result)
+
+	t.Run("JSON output tests", func(t *testing.T) {
+		opts := DefaultConsoleOptions()
+		opts.PrintTypes = false
+		for i, c := range cases {
+			result, _ := Compare([]byte(c.a), []byte(c.b), &opts)
+			if result != c.result {
+				t.Errorf("case %d failed, got: %s, expected: %s", i, result, c.result)
+			}
 		}
-	}
+	})
+
+	t.Run("YAML output tests", func(t *testing.T) {
+		opts := DefaultConsoleOptions().WithYAMLOutput()
+		opts.PrintTypes = false
+		for i, c := range cases {
+			result, _ := Compare([]byte(c.a), []byte(c.b), &opts)
+			if result != c.result {
+				t.Errorf("case %d failed, got: %s, expected: %s", i, result, c.result)
+			}
+		}
+	})
 }
